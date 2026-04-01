@@ -1,0 +1,1222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>Photo Spots</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <style>
+    :root {
+      --bg:        #0d0d17;
+      --surface:   #161622;
+      --surface-2: #1e1e2e;
+      --surface-3: #262638;
+      --border:    #2e2e42;
+      --text:      #e2e2f0;
+      --text-2:    #8888aa;
+      --text-3:    #555570;
+      --accent:    #7c6ff7;
+      --accent-h:  #9088fa;
+      --green:     #22c55e;
+      --red:       #ef4444;
+      --yellow:    #f59e0b;
+      --want:      #7c6ff7;
+      --visited:   #22c55e;
+      --skip:      #555570;
+      --sidebar:   320px;
+      --header:    52px;
+      --radius:    8px;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; }
+
+    /* ── Auth overlay ── */
+    #auth-overlay {
+      position: fixed; inset: 0; background: var(--bg);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      z-index: 9999; gap: 24px;
+    }
+    #auth-overlay .logo { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
+    #auth-overlay .logo span { color: var(--accent); }
+    #auth-overlay p { color: var(--text-2); font-size: 15px; }
+    #auth-overlay.hidden { display: none; }
+    .btn-google {
+      display: flex; align-items: center; gap: 10px; padding: 12px 24px;
+      background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius);
+      color: var(--text); font-size: 15px; font-weight: 500; cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-google:hover { background: var(--surface-2); }
+    .btn-google svg { width: 20px; height: 20px; }
+
+    /* ── App shell ── */
+    #app { height: 100%; display: flex; flex-direction: column; }
+    #app.hidden { display: none; }
+
+    /* ── Header ── */
+    header {
+      height: var(--header); min-height: var(--header);
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; padding: 0 14px; gap: 10px; z-index: 100;
+    }
+    .logo-sm { font-size: 17px; font-weight: 700; letter-spacing: -0.3px; flex: 1; }
+    .logo-sm span { color: var(--accent); }
+    #add-pin-btn {
+      display: flex; align-items: center; gap: 6px; padding: 6px 14px;
+      background: var(--accent); border: none; border-radius: var(--radius);
+      color: #fff; font-size: 13px; font-weight: 600; cursor: pointer;
+      transition: background 0.15s;
+    }
+    #add-pin-btn:hover { background: var(--accent-h); }
+    #add-pin-btn.active { background: var(--red); }
+    .user-pill {
+      display: flex; align-items: center; gap: 8px;
+      padding: 4px 10px 4px 4px; border-radius: 20px;
+      background: var(--surface-3); border: 1px solid var(--border); cursor: pointer;
+    }
+    .user-pill img { width: 26px; height: 26px; border-radius: 50%; }
+    .user-pill span { font-size: 13px; color: var(--text-2); }
+    .user-pill:hover span { color: var(--text); }
+
+    /* ── Main layout ── */
+    #main { flex: 1; display: flex; overflow: hidden; }
+
+    /* ── Sidebar ── */
+    #sidebar {
+      width: var(--sidebar); min-width: var(--sidebar);
+      background: var(--surface); border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    .tab-bar {
+      display: flex; border-bottom: 1px solid var(--border);
+    }
+    .tab {
+      flex: 1; padding: 12px; text-align: center; font-size: 13px; font-weight: 600;
+      color: var(--text-2); cursor: pointer; border-bottom: 2px solid transparent;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    /* Filters */
+    #filter-bar {
+      padding: 10px; border-bottom: 1px solid var(--border);
+      display: flex; gap: 6px; flex-wrap: wrap;
+    }
+    .filter-select {
+      flex: 1; min-width: 0; padding: 5px 8px;
+      background: var(--surface-3); border: 1px solid var(--border);
+      border-radius: 6px; color: var(--text-2); font-size: 12px; cursor: pointer;
+    }
+    .filter-select:focus { outline: none; border-color: var(--accent); }
+
+    /* Pin list */
+    #pin-list-wrap { flex: 1; overflow-y: auto; }
+    #pin-list { padding: 8px; display: flex; flex-direction: column; gap: 4px; }
+    .pin-card {
+      padding: 10px 12px; border-radius: var(--radius); background: var(--surface-2);
+      border: 1px solid transparent; cursor: pointer; transition: background 0.1s, border-color 0.1s;
+    }
+    .pin-card:hover { background: var(--surface-3); }
+    .pin-card.selected { border-color: var(--accent); background: var(--surface-3); }
+    .pin-card-row { display: flex; align-items: center; gap: 8px; }
+    .pin-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .pin-card-name { font-weight: 600; font-size: 13px; flex: 1; truncate: ellipsis; white-space: nowrap; overflow: hidden; }
+    .pin-card-meta { font-size: 11px; color: var(--text-2); margin-top: 3px; padding-left: 18px; }
+    .empty-state { padding: 32px 16px; text-align: center; color: var(--text-3); font-size: 13px; line-height: 1.6; }
+
+    /* Pin detail panel */
+    #pin-detail {
+      display: flex; flex-direction: column; height: 100%; overflow: hidden;
+    }
+    #pin-detail.hidden { display: none; }
+    #pin-list-section { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+    #pin-list-section.hidden { display: none; }
+    .detail-header {
+      padding: 12px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .back-btn {
+      background: none; border: none; color: var(--text-2); cursor: pointer;
+      font-size: 18px; padding: 2px 6px; border-radius: 4px; line-height: 1;
+    }
+    .back-btn:hover { color: var(--text); background: var(--surface-3); }
+    .detail-name { font-size: 16px; font-weight: 700; flex: 1; }
+    .detail-actions { display: flex; gap: 6px; }
+    .icon-btn {
+      background: var(--surface-3); border: 1px solid var(--border);
+      border-radius: 6px; color: var(--text-2); cursor: pointer;
+      padding: 5px 8px; font-size: 14px; line-height: 1;
+    }
+    .icon-btn:hover { color: var(--text); }
+    .icon-btn.danger:hover { color: var(--red); border-color: var(--red); }
+    .detail-body { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+    .detail-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .chip {
+      padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600;
+      background: var(--surface-3); border: 1px solid var(--border);
+    }
+    .chip.status-want { background: rgba(124,111,247,0.15); border-color: var(--want); color: var(--want); }
+    .chip.status-visited { background: rgba(34,197,94,0.15); border-color: var(--visited); color: var(--visited); }
+    .chip.status-skip { background: rgba(85,85,112,0.2); border-color: var(--skip); color: var(--text-3); }
+    .detail-notes { font-size: 13px; color: var(--text-2); line-height: 1.6; white-space: pre-wrap; }
+    .detail-section-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-3); }
+    .tips-box {
+      background: var(--surface-3); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 12px; font-size: 13px; line-height: 1.7;
+      color: var(--text-2); white-space: pre-wrap;
+    }
+    .tips-box.loading { color: var(--text-3); font-style: italic; }
+    .tips-actions { display: flex; gap: 8px; }
+    .btn-tips {
+      flex: 1; padding: 8px; border-radius: var(--radius); font-size: 13px; font-weight: 600;
+      cursor: pointer; border: 1px solid var(--border); transition: background 0.15s;
+    }
+    .btn-tips.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn-tips.primary:hover { background: var(--accent-h); }
+    .btn-tips.secondary { background: var(--surface-3); color: var(--text-2); }
+    .btn-tips.secondary:hover { background: var(--surface-2); }
+    .btn-tips:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── Handbook tab ── */
+    #handbook-section { flex: 1; overflow-y: auto; padding: 8px; }
+    #handbook-section.hidden { display: none; }
+    .handbook-add-row { padding: 6px 4px 10px; }
+    .btn-sm {
+      padding: 6px 14px; border-radius: var(--radius); font-size: 12px; font-weight: 600;
+      cursor: pointer; border: 1px solid var(--border); background: var(--surface-3);
+      color: var(--text); transition: background 0.15s;
+    }
+    .btn-sm:hover { background: var(--surface-2); }
+    .btn-sm.accent { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn-sm.accent:hover { background: var(--accent-h); }
+    .category-group { margin-bottom: 12px; }
+    .category-label {
+      font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--text-3); padding: 4px 4px 6px;
+    }
+    .handbook-entry {
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 10px 12px; margin-bottom: 4px; cursor: pointer;
+    }
+    .handbook-entry:hover { background: var(--surface-3); }
+    .entry-title-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .entry-title { font-weight: 600; font-size: 13px; }
+    .entry-body { font-size: 12px; color: var(--text-2); margin-top: 6px; line-height: 1.6; white-space: pre-wrap; }
+    .entry-body.collapsed { display: none; }
+    .entry-actions { display: flex; gap: 4px; }
+
+    /* ── Map ── */
+    #map { flex: 1; }
+    .add-mode-banner {
+      position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+      background: var(--surface); border: 1px solid var(--accent); border-radius: var(--radius);
+      padding: 8px 16px; font-size: 13px; color: var(--accent); font-weight: 600;
+      z-index: 500; pointer-events: none; white-space: nowrap;
+    }
+    /* Custom map markers */
+    .map-marker {
+      width: 18px; height: 18px; border-radius: 50%;
+      border: 2.5px solid rgba(255,255,255,0.8);
+      box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+      transition: transform 0.1s;
+    }
+    .map-marker.selected { transform: scale(1.4); }
+    .leaflet-popup-content-wrapper {
+      background: var(--surface-2) !important; border: 1px solid var(--border) !important;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4) !important; border-radius: var(--radius) !important;
+      color: var(--text) !important;
+    }
+    .leaflet-popup-tip { background: var(--surface-2) !important; }
+    .leaflet-popup-content { margin: 10px 14px !important; font-size: 13px !important; }
+    .popup-name { font-weight: 700; font-size: 14px; }
+    .popup-meta { color: var(--text-2); font-size: 12px; margin-top: 3px; }
+
+    /* ── Modals ── */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 1000; padding: 16px;
+    }
+    .modal-overlay.hidden { display: none; }
+    .modal {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; width: 100%; max-width: 460px;
+      max-height: 90vh; overflow-y: auto;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    }
+    .modal-header {
+      padding: 16px 20px 14px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .modal-title { font-size: 16px; font-weight: 700; }
+    .modal-close {
+      background: none; border: none; color: var(--text-3); cursor: pointer;
+      font-size: 20px; line-height: 1; padding: 2px 6px; border-radius: 4px;
+    }
+    .modal-close:hover { color: var(--text); background: var(--surface-3); }
+    .modal-body { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+    .modal-footer {
+      padding: 14px 20px; border-top: 1px solid var(--border);
+      display: flex; gap: 8px; justify-content: flex-end;
+    }
+    .form-group { display: flex; flex-direction: column; gap: 5px; }
+    label { font-size: 12px; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.05em; }
+    input[type="text"], select, textarea {
+      width: 100%; padding: 9px 12px;
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: var(--radius); color: var(--text); font-size: 14px;
+      transition: border-color 0.15s;
+    }
+    input[type="text"]:focus, select:focus, textarea:focus {
+      outline: none; border-color: var(--accent);
+    }
+    textarea { resize: vertical; min-height: 80px; font-family: inherit; line-height: 1.5; }
+    select option { background: var(--surface-2); }
+    .btn-cancel {
+      padding: 8px 18px; border-radius: var(--radius); font-size: 14px; font-weight: 600;
+      cursor: pointer; background: var(--surface-3); border: 1px solid var(--border); color: var(--text);
+    }
+    .btn-cancel:hover { background: var(--surface-2); }
+    .btn-save {
+      padding: 8px 18px; border-radius: var(--radius); font-size: 14px; font-weight: 600;
+      cursor: pointer; background: var(--accent); border: 1px solid var(--accent); color: #fff;
+    }
+    .btn-save:hover { background: var(--accent-h); }
+
+    /* Confirm modal */
+    #confirm-modal .modal { max-width: 360px; }
+    .confirm-msg { font-size: 14px; line-height: 1.6; color: var(--text-2); }
+    .btn-danger {
+      padding: 8px 18px; border-radius: var(--radius); font-size: 14px; font-weight: 600;
+      cursor: pointer; background: var(--red); border: none; color: #fff;
+    }
+
+    /* ── Toast ── */
+    #toast {
+      position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+      background: var(--surface-3); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 10px 20px; font-size: 13px;
+      color: var(--text); z-index: 2000; pointer-events: none;
+      opacity: 0; transition: opacity 0.2s;
+    }
+    #toast.show { opacity: 1; }
+
+    /* ── Mobile ── */
+    @media (max-width: 680px) {
+      #sidebar { display: none; }
+      #map { width: 100%; }
+      #mobile-bottom { display: flex; }
+      #mobile-sheet {
+        position: fixed; inset: auto 0 0 0;
+        background: var(--surface); border-top: 1px solid var(--border);
+        border-radius: 14px 14px 0 0;
+        transform: translateY(100%); transition: transform 0.3s ease;
+        z-index: 200; max-height: 70vh; display: flex; flex-direction: column;
+      }
+      #mobile-sheet.open { transform: translateY(0); }
+      #mobile-sheet-inner { overflow-y: auto; padding: 0 12px 20px; flex: 1; }
+      #mobile-sheet-handle {
+        width: 36px; height: 4px; background: var(--border);
+        border-radius: 2px; margin: 10px auto 8px;
+      }
+      .fab {
+        position: fixed; bottom: 72px; right: 16px;
+        width: 48px; height: 48px; border-radius: 50%;
+        background: var(--accent); border: none; color: #fff;
+        font-size: 22px; line-height: 1; cursor: pointer;
+        box-shadow: 0 4px 16px rgba(124,111,247,0.5);
+        display: flex; align-items: center; justify-content: center;
+        z-index: 150;
+      }
+      .fab.active { background: var(--red); }
+      #add-pin-btn { display: none; }
+    }
+    @media (min-width: 681px) {
+      #mobile-bottom { display: none; }
+      #mobile-sheet { display: none !important; }
+      .fab { display: none; }
+    }
+
+    /* Mobile bottom nav */
+    #mobile-bottom {
+      height: 56px; background: var(--surface); border-top: 1px solid var(--border);
+      display: flex; z-index: 300;
+    }
+    .mob-tab {
+      flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 3px; font-size: 10px; color: var(--text-3); cursor: pointer; background: none; border: none;
+      font-family: inherit;
+    }
+    .mob-tab.active { color: var(--accent); }
+    .mob-tab svg { width: 20px; height: 20px; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 2px; }
+  </style>
+</head>
+<body>
+
+<!-- Auth Overlay -->
+<div id="auth-overlay">
+  <div class="logo">Photo<span>Spots</span></div>
+  <p>A shared map for your photography crew.</p>
+  <button class="btn-google" onclick="signIn()">
+    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+    </svg>
+    Sign in with Google
+  </button>
+</div>
+
+<!-- App -->
+<div id="app" class="hidden">
+  <header>
+    <div class="logo-sm">Photo<span>Spots</span></div>
+    <button id="add-pin-btn" onclick="toggleAddMode()">＋ Add Pin</button>
+    <div class="user-pill" onclick="signOut()" title="Sign out">
+      <img id="user-avatar" src="" alt="">
+      <span id="user-name"></span>
+    </div>
+  </header>
+
+  <div id="main">
+    <!-- Sidebar -->
+    <div id="sidebar">
+      <div class="tab-bar">
+        <div class="tab active" id="tab-pins" onclick="switchTab('pins')">Pins</div>
+        <div class="tab" id="tab-handbook" onclick="switchTab('handbook')">Handbook</div>
+      </div>
+
+      <!-- Pins tab -->
+      <div id="pin-list-section">
+        <div id="filter-bar">
+          <select class="filter-select" id="f-status" onchange="applyFilters()">
+            <option value="">All statuses</option>
+            <option value="wantToVisit">Want to Visit</option>
+            <option value="visited">Visited</option>
+            <option value="skip">Skip</option>
+          </select>
+          <select class="filter-select" id="f-type" onchange="applyFilters()">
+            <option value="">All types</option>
+            <option value="Landscape">Landscape</option>
+            <option value="Street">Street</option>
+            <option value="Architecture">Architecture</option>
+            <option value="Portrait">Portrait</option>
+            <option value="Astro">Astro</option>
+            <option value="Other">Other</option>
+          </select>
+          <select class="filter-select" id="f-time" onchange="applyFilters()">
+            <option value="">All times</option>
+            <option value="Golden Hour AM">Golden Hour AM</option>
+            <option value="Golden Hour PM">Golden Hour PM</option>
+            <option value="Blue Hour">Blue Hour</option>
+            <option value="Midday">Midday</option>
+            <option value="Night / Astro">Night / Astro</option>
+            <option value="Any">Any</option>
+          </select>
+        </div>
+        <div id="pin-list-wrap">
+          <div id="pin-list"></div>
+        </div>
+      </div>
+
+      <!-- Pin detail panel -->
+      <div id="pin-detail" class="hidden">
+        <div class="detail-header">
+          <button class="back-btn" onclick="closeDetail()">←</button>
+          <div class="detail-name" id="detail-name"></div>
+          <div class="detail-actions">
+            <button class="icon-btn" onclick="editSelectedPin()" title="Edit">✎</button>
+            <button class="icon-btn danger" onclick="deleteSelectedPin()" title="Delete">✕</button>
+          </div>
+        </div>
+        <div class="detail-body">
+          <div class="detail-chips" id="detail-chips"></div>
+          <div id="detail-notes-wrap" style="display:none">
+            <div class="detail-section-label">Notes</div>
+            <div class="detail-notes" id="detail-notes"></div>
+          </div>
+          <div>
+            <div class="detail-section-label" style="margin-bottom:8px">AI Tips</div>
+            <div id="tips-content"></div>
+            <div class="tips-actions" style="margin-top:8px" id="tips-actions"></div>
+          </div>
+          <div style="font-size:11px;color:var(--text-3)" id="detail-meta"></div>
+        </div>
+      </div>
+
+      <!-- Handbook tab -->
+      <div id="handbook-section" class="hidden">
+        <div class="handbook-add-row">
+          <button class="btn-sm accent" onclick="openHandbookModal()">＋ Add Entry</button>
+        </div>
+        <div id="handbook-list"></div>
+      </div>
+    </div>
+
+    <!-- Map -->
+    <div style="position:relative;flex:1;display:flex">
+      <div id="map"></div>
+      <div id="add-banner" class="add-mode-banner" style="display:none">Click on map to place pin — ESC to cancel</div>
+    </div>
+  </div>
+
+  <!-- Mobile bottom nav -->
+  <div id="mobile-bottom">
+    <button class="mob-tab active" id="mob-map" onclick="mobTab('map')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/></svg>
+      Map
+    </button>
+    <button class="mob-tab" id="mob-pins" onclick="mobTab('pins')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+      Pins
+    </button>
+    <button class="mob-tab" id="mob-handbook" onclick="mobTab('handbook')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
+      Handbook
+    </button>
+  </div>
+
+  <!-- Mobile FAB -->
+  <button class="fab" id="mob-fab" onclick="toggleAddMode()">＋</button>
+
+  <!-- Mobile bottom sheet -->
+  <div id="mobile-sheet">
+    <div id="mobile-sheet-handle"></div>
+    <div id="mobile-sheet-inner"></div>
+  </div>
+</div>
+
+<!-- Add/Edit Pin Modal -->
+<div class="modal-overlay hidden" id="pin-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="pin-modal-title">Add Pin</div>
+      <button class="modal-close" onclick="closePinModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="pin-edit-id">
+      <input type="hidden" id="pin-lat">
+      <input type="hidden" id="pin-lng">
+      <div class="form-group">
+        <label>Name *</label>
+        <input type="text" id="pin-name" placeholder="e.g. Waterloo Bridge at Dusk">
+      </div>
+      <div class="form-group">
+        <label>Location Type</label>
+        <select id="pin-type">
+          <option value="Landscape">Landscape</option>
+          <option value="Street">Street</option>
+          <option value="Architecture">Architecture</option>
+          <option value="Portrait">Portrait</option>
+          <option value="Astro">Astro</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Preferred Time</label>
+        <select id="pin-time">
+          <option value="Golden Hour AM">Golden Hour AM</option>
+          <option value="Golden Hour PM">Golden Hour PM</option>
+          <option value="Blue Hour">Blue Hour</option>
+          <option value="Midday">Midday</option>
+          <option value="Night / Astro">Night / Astro</option>
+          <option value="Any">Any</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Visit Status</label>
+        <select id="pin-status">
+          <option value="wantToVisit">Want to Visit</option>
+          <option value="visited">Visited</option>
+          <option value="skip">Skip</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Notes</label>
+        <textarea id="pin-notes" placeholder="Access info, best angles, parking..."></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="closePinModal()">Cancel</button>
+      <button class="btn-save" onclick="savePin()">Save Pin</button>
+    </div>
+  </div>
+</div>
+
+<!-- Handbook Entry Modal -->
+<div class="modal-overlay hidden" id="handbook-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="hb-modal-title">Add Handbook Entry</div>
+      <button class="modal-close" onclick="closeHandbookModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="hb-edit-id">
+      <div class="form-group">
+        <label>Category</label>
+        <select id="hb-category">
+          <option value="cameraBodies">Camera Bodies</option>
+          <option value="lenses">Lenses</option>
+          <option value="otherEquipment">Other Equipment</option>
+          <option value="generalTips">General Tips</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Title *</label>
+        <input type="text" id="hb-title" placeholder="e.g. Sony A7IV">
+      </div>
+      <div class="form-group">
+        <label>Details</label>
+        <textarea id="hb-body" style="min-height:120px" placeholder="Focal lengths, strengths, quirks, best use cases..."></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="closeHandbookModal()">Cancel</button>
+      <button class="btn-save" onclick="saveHandbookEntry()">Save Entry</button>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm Modal -->
+<div class="modal-overlay hidden" id="confirm-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="confirm-title">Confirm</div>
+      <button class="modal-close" onclick="closeConfirm()">×</button>
+    </div>
+    <div class="modal-body">
+      <p class="confirm-msg" id="confirm-msg"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="closeConfirm()">Cancel</button>
+      <button class="btn-danger" id="confirm-ok">Delete</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<!-- Scripts -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script>
+// ═══════════════════════════════════════════════
+// CONFIG — replace with your own values
+// ═══════════════════════════════════════════════
+const FIREBASE_CONFIG = {
+  apiKey:            "YOUR_FIREBASE_API_KEY",
+  authDomain:        "YOUR_PROJECT.firebaseapp.com",
+  projectId:         "YOUR_PROJECT_ID",
+  storageBucket:     "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId:             "YOUR_APP_ID"
+};
+const GEMINI_KEY = "YOUR_GEMINI_API_KEY"; // gemini-1.5-flash free tier
+
+// ═══════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════
+firebase.initializeApp(FIREBASE_CONFIG);
+const auth = firebase.auth();
+const db   = firebase.firestore();
+const gProvider = new firebase.auth.GoogleAuthProvider();
+
+// ═══════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════
+let leafletMap, markers = {};
+let pins = {}, handbook = {};
+let selectedPinId = null;
+let addMode = false;
+let unsubPins, unsubHandbook;
+let filters = { status: '', type: '', time: '' };
+let activeTab = 'pins';
+
+// ═══════════════════════════════════════════════
+// AUTH
+// ═══════════════════════════════════════════════
+auth.onAuthStateChanged(user => {
+  if (user) {
+    document.getElementById('user-avatar').src = user.photoURL || '';
+    document.getElementById('user-name').textContent = user.displayName?.split(' ')[0] || 'You';
+    document.getElementById('auth-overlay').classList.add('hidden');
+    document.getElementById('app').classList.remove('hidden');
+    initMap();
+    subscribePins();
+    subscribeHandbook();
+  } else {
+    document.getElementById('auth-overlay').classList.remove('hidden');
+    document.getElementById('app').classList.add('hidden');
+    if (unsubPins) unsubPins();
+    if (unsubHandbook) unsubHandbook();
+    markers = {}; pins = {}; handbook = {};
+  }
+});
+
+function signIn() { auth.signInWithPopup(gProvider).catch(e => toast('Sign-in failed: ' + e.message)); }
+function signOut() { auth.signOut(); }
+
+// ═══════════════════════════════════════════════
+// MAP
+// ═══════════════════════════════════════════════
+function initMap() {
+  if (leafletMap) return;
+  const saved = JSON.parse(localStorage.getItem('ps-view') || '{"lat":51.505,"lng":-0.09,"zoom":12}');
+  leafletMap = L.map('map', { center: [saved.lat, saved.lng], zoom: saved.zoom, zoomControl: false });
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    maxZoom: 19
+  }).addTo(leafletMap);
+  L.control.zoom({ position: 'bottomright' }).addTo(leafletMap);
+  leafletMap.on('click', onMapClick);
+  leafletMap.on('moveend zoomend', () => {
+    const c = leafletMap.getCenter();
+    localStorage.setItem('ps-view', JSON.stringify({ lat: c.lat, lng: c.lng, zoom: leafletMap.getZoom() }));
+  });
+}
+
+function onMapClick(e) {
+  if (!addMode) return;
+  setAddMode(false);
+  openAddPinModal(e.latlng.lat, e.latlng.lng);
+}
+
+function setAddMode(on) {
+  addMode = on;
+  document.getElementById('add-banner').style.display = on ? 'block' : 'none';
+  document.getElementById('add-pin-btn').classList.toggle('active', on);
+  const fab = document.getElementById('mob-fab');
+  if (fab) fab.classList.toggle('active', on);
+  if (leafletMap) leafletMap.getContainer().style.cursor = on ? 'crosshair' : '';
+}
+
+function toggleAddMode() { setAddMode(!addMode); }
+
+// ═══════════════════════════════════════════════
+// PINS — Firestore
+// ═══════════════════════════════════════════════
+function subscribePins() {
+  unsubPins = db.collection('pins').onSnapshot(snap => {
+    snap.docChanges().forEach(change => {
+      if (change.type === 'removed') {
+        delete pins[change.doc.id];
+        removeMarker(change.doc.id);
+      } else {
+        pins[change.doc.id] = { id: change.doc.id, ...change.doc.data() };
+        upsertMarker(pins[change.doc.id]);
+      }
+    });
+    renderPinList();
+    if (selectedPinId && pins[selectedPinId]) renderDetail(pins[selectedPinId]);
+    else if (selectedPinId && !pins[selectedPinId]) closeDetail();
+  });
+}
+
+function statusColor(status) {
+  return status === 'visited' ? '#22c55e' : status === 'skip' ? '#555570' : '#7c6ff7';
+}
+
+function upsertMarker(pin) {
+  const color = statusColor(pin.status);
+  const icon = L.divIcon({
+    className: '',
+    html: `<div class="map-marker" style="background:${color}"></div>`,
+    iconSize: [18, 18], iconAnchor: [9, 9], popupAnchor: [0, -12]
+  });
+  if (markers[pin.id]) {
+    markers[pin.id].setLatLng([pin.lat, pin.lng]).setIcon(icon);
+    markers[pin.id].getPopup()?.setContent(popupHTML(pin));
+  } else {
+    const m = L.marker([pin.lat, pin.lng], { icon })
+      .addTo(leafletMap)
+      .bindPopup(popupHTML(pin), { closeButton: false, maxWidth: 220 });
+    m.on('click', () => selectPin(pin.id));
+    markers[pin.id] = m;
+  }
+}
+
+function popupHTML(pin) {
+  const statusLabel = { wantToVisit: 'Want to Visit', visited: 'Visited', skip: 'Skip' };
+  return `<div class="popup-name">${esc(pin.name)}</div>
+          <div class="popup-meta">${esc(pin.locationType)} · ${esc(pin.timeOfDay)} · ${statusLabel[pin.status] || ''}</div>`;
+}
+
+function removeMarker(id) {
+  if (markers[id]) { leafletMap.removeLayer(markers[id]); delete markers[id]; }
+}
+
+function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ═══════════════════════════════════════════════
+// PIN LIST RENDER
+// ═══════════════════════════════════════════════
+function renderPinList() {
+  const list = document.getElementById('pin-list');
+  const filtered = Object.values(pins).filter(p => {
+    if (filters.status && p.status !== filters.status) return false;
+    if (filters.type && p.locationType !== filters.type) return false;
+    if (filters.time && p.timeOfDay !== filters.time) return false;
+    return true;
+  }).sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
+
+  if (!filtered.length) {
+    list.innerHTML = '<div class="empty-state">No pins yet.<br>Click <strong>+ Add Pin</strong> then tap the map.</div>';
+    return;
+  }
+  const statusLabel = { wantToVisit: 'Want to Visit', visited: 'Visited', skip: 'Skip' };
+  list.innerHTML = filtered.map(p => `
+    <div class="pin-card ${selectedPinId === p.id ? 'selected' : ''}" onclick="selectPin('${p.id}')">
+      <div class="pin-card-row">
+        <div class="pin-dot" style="background:${statusColor(p.status)}"></div>
+        <div class="pin-card-name">${esc(p.name)}</div>
+      </div>
+      <div class="pin-card-meta">${esc(p.locationType)} · ${esc(p.timeOfDay)} · ${statusLabel[p.status]||''}</div>
+    </div>`).join('');
+}
+
+function applyFilters() {
+  filters.status = document.getElementById('f-status').value;
+  filters.type   = document.getElementById('f-type').value;
+  filters.time   = document.getElementById('f-time').value;
+  renderPinList();
+}
+
+// ═══════════════════════════════════════════════
+// PIN SELECTION + DETAIL
+// ═══════════════════════════════════════════════
+function selectPin(id) {
+  selectedPinId = id;
+  const pin = pins[id];
+  if (!pin) return;
+  renderPinList();
+  renderDetail(pin);
+  // Pan to pin
+  if (leafletMap) leafletMap.panTo([pin.lat, pin.lng], { animate: true });
+  // Mobile: open sheet
+  if (window.innerWidth <= 680) openMobileSheet('detail', pin);
+}
+
+function renderDetail(pin) {
+  switchTab('pins');
+  document.getElementById('pin-list-section').classList.add('hidden');
+  document.getElementById('pin-detail').classList.remove('hidden');
+  document.getElementById('detail-name').textContent = pin.name;
+
+  // Chips
+  const statusClass = { wantToVisit: 'status-want', visited: 'status-visited', skip: 'status-skip' };
+  const statusLabel = { wantToVisit: 'Want to Visit', visited: 'Visited', skip: 'Skip' };
+  document.getElementById('detail-chips').innerHTML = `
+    <span class="chip ${statusClass[pin.status]||''}">${statusLabel[pin.status]||pin.status}</span>
+    <span class="chip">${esc(pin.locationType)}</span>
+    <span class="chip">${esc(pin.timeOfDay)}</span>`;
+
+  // Notes
+  const nw = document.getElementById('detail-notes-wrap');
+  if (pin.notes?.trim()) {
+    nw.style.display = 'block';
+    document.getElementById('detail-notes').textContent = pin.notes;
+  } else { nw.style.display = 'none'; }
+
+  // Tips
+  renderTipsSection(pin);
+
+  // Meta
+  const date = pin.createdAt?.toDate?.()?.toLocaleDateString() || '';
+  document.getElementById('detail-meta').textContent = `Added by ${pin.createdByName || 'unknown'}${date ? ' · ' + date : ''}`;
+}
+
+function renderTipsSection(pin) {
+  const tc = document.getElementById('tips-content');
+  const ta = document.getElementById('tips-actions');
+  if (pin.aiTips) {
+    tc.innerHTML = `<div class="tips-box">${esc(pin.aiTips)}</div>`;
+    ta.innerHTML = `<button class="btn-tips secondary" onclick="fetchTips('${pin.id}', true)">↺ Refresh Tips</button>`;
+  } else {
+    tc.innerHTML = '';
+    ta.innerHTML = `<button class="btn-tips primary" onclick="fetchTips('${pin.id}', false)">✦ Get AI Tips</button>`;
+  }
+}
+
+function closeDetail() {
+  selectedPinId = null;
+  document.getElementById('pin-list-section').classList.remove('hidden');
+  document.getElementById('pin-detail').classList.add('hidden');
+  renderPinList();
+}
+
+// ═══════════════════════════════════════════════
+// TABS
+// ═══════════════════════════════════════════════
+function switchTab(tab) {
+  activeTab = tab;
+  document.getElementById('tab-pins').classList.toggle('active', tab === 'pins');
+  document.getElementById('tab-handbook').classList.toggle('active', tab === 'handbook');
+  document.getElementById('handbook-section').classList.toggle('hidden', tab !== 'handbook');
+  if (tab === 'pins') {
+    if (selectedPinId) {
+      document.getElementById('pin-list-section').classList.add('hidden');
+      document.getElementById('pin-detail').classList.remove('hidden');
+    } else {
+      document.getElementById('pin-list-section').classList.remove('hidden');
+      document.getElementById('pin-detail').classList.add('hidden');
+    }
+  } else {
+    document.getElementById('pin-list-section').classList.add('hidden');
+    document.getElementById('pin-detail').classList.add('hidden');
+  }
+}
+
+// ═══════════════════════════════════════════════
+// PIN MODAL
+// ═══════════════════════════════════════════════
+function openAddPinModal(lat, lng) {
+  document.getElementById('pin-modal-title').textContent = 'Add Pin';
+  document.getElementById('pin-edit-id').value = '';
+  document.getElementById('pin-lat').value = lat;
+  document.getElementById('pin-lng').value = lng;
+  document.getElementById('pin-name').value = '';
+  document.getElementById('pin-type').value = 'Landscape';
+  document.getElementById('pin-time').value = 'Golden Hour AM';
+  document.getElementById('pin-status').value = 'wantToVisit';
+  document.getElementById('pin-notes').value = '';
+  document.getElementById('pin-modal').classList.remove('hidden');
+  setTimeout(() => document.getElementById('pin-name').focus(), 50);
+}
+
+function editSelectedPin() {
+  const pin = pins[selectedPinId];
+  if (!pin) return;
+  document.getElementById('pin-modal-title').textContent = 'Edit Pin';
+  document.getElementById('pin-edit-id').value = pin.id;
+  document.getElementById('pin-lat').value = pin.lat;
+  document.getElementById('pin-lng').value = pin.lng;
+  document.getElementById('pin-name').value = pin.name;
+  document.getElementById('pin-type').value = pin.locationType;
+  document.getElementById('pin-time').value = pin.timeOfDay;
+  document.getElementById('pin-status').value = pin.status;
+  document.getElementById('pin-notes').value = pin.notes || '';
+  document.getElementById('pin-modal').classList.remove('hidden');
+}
+
+function closePinModal() { document.getElementById('pin-modal').classList.add('hidden'); }
+
+async function savePin() {
+  const name = document.getElementById('pin-name').value.trim();
+  if (!name) { document.getElementById('pin-name').focus(); return; }
+  const user = auth.currentUser;
+  const editId = document.getElementById('pin-edit-id').value;
+  const data = {
+    name,
+    lat:          parseFloat(document.getElementById('pin-lat').value),
+    lng:          parseFloat(document.getElementById('pin-lng').value),
+    locationType: document.getElementById('pin-type').value,
+    timeOfDay:    document.getElementById('pin-time').value,
+    status:       document.getElementById('pin-status').value,
+    notes:        document.getElementById('pin-notes').value.trim(),
+    updatedAt:    firebase.firestore.FieldValue.serverTimestamp()
+  };
+  try {
+    if (editId) {
+      // If status or type changed, clear cached tips
+      const old = pins[editId];
+      if (old && (old.status !== data.status || old.locationType !== data.locationType || old.timeOfDay !== data.timeOfDay || old.notes !== data.notes)) {
+        data.aiTips = '';
+      }
+      await db.collection('pins').doc(editId).update(data);
+      toast('Pin updated');
+    } else {
+      data.createdAt  = firebase.firestore.FieldValue.serverTimestamp();
+      data.createdBy  = user.uid;
+      data.createdByName = user.displayName || '';
+      data.aiTips     = '';
+      const ref = await db.collection('pins').add(data);
+      selectedPinId = ref.id;
+    }
+    closePinModal();
+  } catch(e) { toast('Error: ' + e.message); }
+}
+
+function deleteSelectedPin() {
+  if (!selectedPinId) return;
+  confirm_('Delete "' + (pins[selectedPinId]?.name || 'this pin') + '"?', async () => {
+    await db.collection('pins').doc(selectedPinId).delete();
+    closeDetail();
+    toast('Pin deleted');
+  });
+}
+
+// ═══════════════════════════════════════════════
+// AI TIPS
+// ═══════════════════════════════════════════════
+async function fetchTips(pinId, forceRefresh) {
+  const pin = pins[pinId];
+  if (!pin) return;
+  if (pin.aiTips && !forceRefresh) { renderTipsSection(pin); return; }
+
+  const tc = document.getElementById('tips-content');
+  const ta = document.getElementById('tips-actions');
+  tc.innerHTML = '<div class="tips-box loading">Generating tips with Gemini AI…</div>';
+  ta.innerHTML = '<button class="btn-tips secondary" disabled>Loading…</button>';
+
+  const handbookText = buildHandbookText();
+  const prompt = `You are a photography assistant for a small group of friends.
+
+Location: ${pin.name}
+Type: ${pin.locationType}
+Best time: ${pin.timeOfDay}
+Notes: ${pin.notes || 'None'}
+
+${handbookText ? `The group's gear and tips:\n${handbookText}\n` : ''}
+Provide concise, practical photography tips for this spot covering:
+1. Best approach for ${pin.timeOfDay}
+2. Suggested camera settings
+3. Composition ideas
+4. Gear-specific advice${handbookText ? ' based on the equipment listed above' : ''}
+
+Keep it practical and specific to this location.`;
+
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) }
+    );
+    if (!res.ok) throw new Error(`API error ${res.status}`);
+    const json = await res.json();
+    const text = json.candidates?.[0]?.content?.parts?.[0]?.text || 'No response from AI.';
+    await db.collection('pins').doc(pinId).update({ aiTips: text });
+    // local cache
+    if (pins[pinId]) pins[pinId].aiTips = text;
+    renderTipsSection(pins[pinId]);
+    toast('Tips generated');
+  } catch(e) {
+    tc.innerHTML = `<div class="tips-box loading">Failed to get tips: ${esc(e.message)}</div>`;
+    ta.innerHTML = `<button class="btn-tips primary" onclick="fetchTips('${pinId}', true)">↺ Try Again</button>`;
+  }
+}
+
+function buildHandbookText() {
+  const catLabels = { cameraBodies: 'Camera Bodies', lenses: 'Lenses', otherEquipment: 'Other Equipment', generalTips: 'General Tips' };
+  const entries = Object.values(handbook);
+  if (!entries.length) return '';
+  const grouped = {};
+  entries.forEach(e => { (grouped[e.category] = grouped[e.category]||[]).push(e); });
+  return Object.entries(grouped).map(([cat, items]) =>
+    `${catLabels[cat]||cat}:\n` + items.map(i => `- ${i.title}: ${i.body}`).join('\n')
+  ).join('\n\n');
+}
+
+// ═══════════════════════════════════════════════
+// HANDBOOK
+// ═══════════════════════════════════════════════
+function subscribeHandbook() {
+  unsubHandbook = db.collection('handbook').onSnapshot(snap => {
+    snap.docChanges().forEach(change => {
+      if (change.type === 'removed') delete handbook[change.doc.id];
+      else handbook[change.doc.id] = { id: change.doc.id, ...change.doc.data() };
+    });
+    renderHandbook();
+  });
+}
+
+function renderHandbook() {
+  const catLabels = { cameraBodies: 'Camera Bodies', lenses: 'Lenses', otherEquipment: 'Other Equipment', generalTips: 'General Tips' };
+  const catOrder  = ['cameraBodies', 'lenses', 'otherEquipment', 'generalTips'];
+  const entries = Object.values(handbook);
+  const list = document.getElementById('handbook-list');
+
+  if (!entries.length) {
+    list.innerHTML = '<div class="empty-state">No entries yet.<br>Document your cameras, lenses &amp; tips here.</div>';
+    return;
+  }
+  const grouped = {};
+  entries.forEach(e => { (grouped[e.category] = grouped[e.category]||[]).push(e); });
+  list.innerHTML = catOrder.filter(c => grouped[c]).map(cat =>
+    `<div class="category-group">
+      <div class="category-label">${catLabels[cat]}</div>
+      ${grouped[cat].map(e => `
+        <div class="handbook-entry" onclick="toggleEntry(this)">
+          <div class="entry-title-row">
+            <div class="entry-title">${esc(e.title)}</div>
+            <div class="entry-actions" onclick="event.stopPropagation()">
+              <button class="icon-btn" onclick="editHandbookEntry('${e.id}')" title="Edit">✎</button>
+              <button class="icon-btn danger" onclick="deleteHandbookEntry('${e.id}')" title="Delete">✕</button>
+            </div>
+          </div>
+          <div class="entry-body collapsed">${esc(e.body)}</div>
+        </div>`).join('')}
+    </div>`).join('');
+}
+
+function toggleEntry(el) {
+  const body = el.querySelector('.entry-body');
+  body.classList.toggle('collapsed');
+}
+
+function openHandbookModal(entry) {
+  document.getElementById('hb-modal-title').textContent = entry ? 'Edit Entry' : 'Add Entry';
+  document.getElementById('hb-edit-id').value   = entry?.id || '';
+  document.getElementById('hb-category').value  = entry?.category || 'cameraBodies';
+  document.getElementById('hb-title').value     = entry?.title || '';
+  document.getElementById('hb-body').value      = entry?.body || '';
+  document.getElementById('handbook-modal').classList.remove('hidden');
+  setTimeout(() => document.getElementById('hb-title').focus(), 50);
+}
+
+function closeHandbookModal() { document.getElementById('handbook-modal').classList.add('hidden'); }
+
+function editHandbookEntry(id) { openHandbookModal(handbook[id]); }
+
+function deleteHandbookEntry(id) {
+  confirm_(`Delete "${handbook[id]?.title || 'this entry'}"?`, async () => {
+    await db.collection('handbook').doc(id).delete();
+    toast('Entry deleted');
+  });
+}
+
+async function saveHandbookEntry() {
+  const title = document.getElementById('hb-title').value.trim();
+  if (!title) { document.getElementById('hb-title').focus(); return; }
+  const editId = document.getElementById('hb-edit-id').value;
+  const data = {
+    category:  document.getElementById('hb-category').value,
+    title,
+    body:      document.getElementById('hb-body').value.trim(),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  };
+  try {
+    if (editId) { await db.collection('handbook').doc(editId).update(data); toast('Entry updated'); }
+    else {
+      data.createdBy = auth.currentUser.uid;
+      await db.collection('handbook').add(data);
+      toast('Entry added');
+    }
+    closeHandbookModal();
+  } catch(e) { toast('Error: ' + e.message); }
+}
+
+// ═══════════════════════════════════════════════
+// MOBILE
+// ═══════════════════════════════════════════════
+function mobTab(tab) {
+  ['map','pins','handbook'].forEach(t => document.getElementById('mob-'+t).classList.remove('active'));
+  document.getElementById('mob-'+tab).classList.add('active');
+  const sheet = document.getElementById('mobile-sheet');
+  if (tab === 'map') { sheet.classList.remove('open'); return; }
+  sheet.classList.add('open');
+  const inner = document.getElementById('mobile-sheet-inner');
+  if (tab === 'pins') {
+    const statusLabel = { wantToVisit: 'Want to Visit', visited: 'Visited', skip: 'Skip' };
+    const sorted = Object.values(pins).sort((a,b) => (b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
+    inner.innerHTML = sorted.length
+      ? sorted.map(p => `<div class="pin-card" onclick="selectPin('${p.id}');closeMobileSheet()" style="margin-bottom:4px">
+          <div class="pin-card-row"><div class="pin-dot" style="background:${statusColor(p.status)}"></div><div class="pin-card-name">${esc(p.name)}</div></div>
+          <div class="pin-card-meta">${esc(p.locationType)} · ${esc(p.timeOfDay)} · ${statusLabel[p.status]||''}</div>
+        </div>`).join('')
+      : '<div class="empty-state">No pins yet.</div>';
+  } else {
+    // Handbook in mobile sheet
+    const catLabels = { cameraBodies: 'Camera Bodies', lenses: 'Lenses', otherEquipment: 'Other Equipment', generalTips: 'General Tips' };
+    const catOrder  = ['cameraBodies','lenses','otherEquipment','generalTips'];
+    const entries   = Object.values(handbook);
+    inner.innerHTML = `<div style="padding:8px 0 12px">
+      <button class="btn-sm accent" onclick="openHandbookModal()">＋ Add Entry</button></div>` +
+      (entries.length ? catOrder.filter(c => entries.find(e=>e.category===c)).map(cat =>
+        `<div class="category-label">${catLabels[cat]}</div>` +
+        entries.filter(e=>e.category===cat).map(e =>
+          `<div class="handbook-entry" onclick="toggleEntry(this)" style="margin-bottom:4px">
+            <div class="entry-title-row">
+              <div class="entry-title">${esc(e.title)}</div>
+              <div class="entry-actions" onclick="event.stopPropagation()">
+                <button class="icon-btn" onclick="editHandbookEntry('${e.id}')">✎</button>
+                <button class="icon-btn danger" onclick="deleteHandbookEntry('${e.id}')">✕</button>
+              </div>
+            </div>
+            <div class="entry-body collapsed">${esc(e.body)}</div>
+          </div>`).join('')).join('')
+      : '<div class="empty-state">No handbook entries yet.</div>');
+  }
+}
+
+function openMobileSheet(type, pin) {
+  if (window.innerWidth > 680) return;
+  document.getElementById('mob-pins').classList.add('active');
+  const sheet = document.getElementById('mobile-sheet');
+  sheet.classList.add('open');
+  const statusLabel = { wantToVisit: 'Want to Visit', visited: 'Visited', skip: 'Skip' };
+  const statusClass = { wantToVisit: 'status-want', visited: 'status-visited', skip: 'status-skip' };
+  const inner = document.getElementById('mobile-sheet-inner');
+  inner.innerHTML = `
+    <button class="btn-sm" onclick="closeMobileSheet()" style="margin:0 0 12px">← Back</button>
+    <div style="font-size:17px;font-weight:700;margin-bottom:10px">${esc(pin.name)}</div>
+    <div class="detail-chips" style="margin-bottom:12px">
+      <span class="chip ${statusClass[pin.status]||''}">${statusLabel[pin.status]||pin.status}</span>
+      <span class="chip">${esc(pin.locationType)}</span>
+      <span class="chip">${esc(pin.timeOfDay)}</span>
+    </div>
+    ${pin.notes ? `<div class="detail-section-label">Notes</div><div class="detail-notes" style="margin-top:6px">${esc(pin.notes)}</div>` : ''}
+    <div style="margin-top:12px">
+      <div class="detail-section-label" style="margin-bottom:8px">AI Tips</div>
+      ${pin.aiTips
+        ? `<div class="tips-box">${esc(pin.aiTips)}</div>
+           <button class="btn-tips secondary" style="width:100%;margin-top:8px" onclick="fetchTips('${pin.id}',true);openMobileSheet('detail',pins['${pin.id}'])">↺ Refresh Tips</button>`
+        : `<button class="btn-tips primary" style="width:100%" onclick="fetchTips('${pin.id}',false).then(()=>openMobileSheet('detail',pins['${pin.id}']))">✦ Get AI Tips</button>`}
+    </div>
+    <div style="margin-top:14px;display:flex;gap:8px">
+      <button class="btn-sm" style="flex:1" onclick="editSelectedPin();closeMobileSheet()">Edit</button>
+      <button class="btn-sm" style="flex:1;color:var(--red)" onclick="deleteSelectedPin()">Delete</button>
+    </div>`;
+}
+
+function closeMobileSheet() {
+  document.getElementById('mobile-sheet').classList.remove('open');
+  document.getElementById('mob-map').classList.add('active');
+  ['pins','handbook'].forEach(t => document.getElementById('mob-'+t).classList.remove('active'));
+}
+
+// ═══════════════════════════════════════════════
+// CONFIRM MODAL
+// ═══════════════════════════════════════════════
+function confirm_(msg, onOk) {
+  document.getElementById('confirm-msg').textContent = msg;
+  document.getElementById('confirm-modal').classList.remove('hidden');
+  const btn = document.getElementById('confirm-ok');
+  const handler = () => { closeConfirm(); onOk(); btn.removeEventListener('click', handler); };
+  btn.addEventListener('click', handler);
+}
+function closeConfirm() { document.getElementById('confirm-modal').classList.add('hidden'); }
+
+// ═══════════════════════════════════════════════
+// TOAST
+// ═══════════════════════════════════════════════
+let _toastTimer;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => el.classList.remove('show'), 2500);
+}
+
+// ═══════════════════════════════════════════════
+// KEYBOARD
+// ═══════════════════════════════════════════════
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    if (addMode) { setAddMode(false); return; }
+    if (!document.getElementById('pin-modal').classList.contains('hidden')) { closePinModal(); return; }
+    if (!document.getElementById('handbook-modal').classList.contains('hidden')) { closeHandbookModal(); return; }
+    if (!document.getElementById('confirm-modal').classList.contains('hidden')) { closeConfirm(); return; }
+  }
+});
+</script>
+</body>
+</html>
