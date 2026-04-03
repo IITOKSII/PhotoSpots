@@ -1,11 +1,15 @@
 # Photo Spots — Engineering Rules
 
+## Session Continuity
+- On every session start: read `.claude/MEMORY.md` for full project context
+- On every session end: update `.claude/MEMORY.md` — append to Change Log, update Known Issues/Todo, update Current State if anything changed
+
 ## Stack
 - Single-file app: `index.html` (HTML + CSS + JS, no build step)
 - Firebase 10 compat SDK (CDN) — Auth + Firestore
 - Leaflet 1.9.4 (CDN) — map
 - Gemini 1.5 Flash REST API — AI tips
-- Netlify static hosting
+- GitHub Pages — hosting (master branch)
 
 ## Config placeholders (top of <script> in index.html)
 - `FIREBASE_CONFIG` — replace with Firebase console values
